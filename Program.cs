@@ -33,8 +33,7 @@ namespace HoustonRadarCSharpAppEx
 
         private static int[] radarIPs = new int[20];
         private static radarCommClassThd curRadar;
-
-        private static CountdownEvent countdown = new CountdownEvent(radarIPs.Length); // Tracks when all radars are done
+        private static int lastIP = 59; 
 
         static void Main(string[] args)
         {
@@ -48,9 +47,6 @@ namespace HoustonRadarCSharpAppEx
             }
 
             pauseEvent.WaitOne();
-
-            countdown.Wait(); // Blocks Main() until all radar tasks are done
-
             Console.WriteLine("Connection completed.");
 
         }
@@ -69,10 +65,11 @@ namespace HoustonRadarCSharpAppEx
             rdr.RadarEventGetInfoDone += async (sender, e) =>
             {
                 Console.WriteLine("Radar connection established. Now reading data from radar " + rdr.IPaddr);
-                await ConnectToAPI(ip);
-                readData(rdr, ip);
 
-                countdown.Signal(); // Signal that this radar is done
+                Task apiConnect = Task.Run(() => ConnectToAPI(ip));
+                Task dataRead = Task.Run(() => readData(rdr, ip));
+
+                Task.WaitAll(apiConnect, dataRead);
             };
 
             rdr.RadarEventRadarNotFound += rdr_RadarEventRadarNotFound;
@@ -83,7 +80,7 @@ namespace HoustonRadarCSharpAppEx
             rdr.Connect();
         }
 
-        static async Task ConnectToAPI(int ip)
+        private static async Task ConnectToAPI(int ip)
         {
             string url = "https://api.spectrumtraffic.com/radar.php?act=get_schedules&ip_address=161.184.106." + ip.ToString();
 
@@ -118,10 +115,10 @@ namespace HoustonRadarCSharpAppEx
                 }
                 catch (Exception ex) { Console.WriteLine("Error: " + ex.Message); }
             }
-
+            //Thread.Sleep(9000);
         }
 
-        private static void readData(radarCommClassThd rdr, int ip)
+        private static async Task readData(radarCommClassThd rdr, int ip)
         {
 
             Console.WriteLine("entered readData function for " + ip + "!!!!!");
@@ -171,7 +168,6 @@ namespace HoustonRadarCSharpAppEx
                 }
                 sw.WriteLine("]");
             }
-            Console.WriteLine("exited parseAndPrintVehicles function for " + ip);
         }
 
 
