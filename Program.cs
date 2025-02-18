@@ -27,8 +27,8 @@ namespace HoustonRadarCSharpAppEx
         private static int totalbytes = 0;
         private static int totalpackets = 0;
  
-        private static DateTime end = DateTime.Now.AddSeconds(-1);
-        private static DateTime start = end.AddMinutes(-15);
+        private static DateTime end = new DateTime(2025, 02, 13);
+        private static DateTime start = new DateTime(2025, 02, 11);
  
         private static int[] radarIPs = { 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59 };
         private static radarCommClassThd curRadar;
@@ -49,28 +49,6 @@ namespace HoustonRadarCSharpAppEx
             Thread.Sleep(5000);
         }
  
-        static async Task ConnectToAPI()
-        {
-            string url = "https://api.spectrumtraffic.com/radar.php?act=get_schedules&ip_address=161.184.106.40";
- 
-            using (HttpClient client = new HttpClient())
-            {
-                try
-                {
-                    HttpResponseMessage response = await client.GetAsync(url);
-                    response.EnsureSuccessStatusCode();
- 
-                    string responseBody = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine(responseBody);
-                }
-                catch (HttpRequestException e)
-                {
-                    Console.WriteLine($"Request error: {e.Message}");
-                }
-            }
-            Thread.Sleep(9000);
-        }
- 
         private static void ConnectToRadar(radarCommClassThd rdr, int ip)
         {
             rdr.IPaddr = "161.184.106." + ip.ToString();
@@ -82,9 +60,10 @@ namespace HoustonRadarCSharpAppEx
             rdr.RadarEventRadarFound += rdr_RadarEventRadarFound;
  
             // Execute readData() when connection setup completes
-            rdr.RadarEventGetInfoDone += (sender, e) =>
+            rdr.RadarEventGetInfoDone += async (sender, e) =>
             {
                 Console.WriteLine("Radar connection established. Now reading data from radar " + rdr.IPaddr);
+                await ConnectToAPI(ip);
                 readData(rdr, ip);
             };
  
@@ -96,6 +75,52 @@ namespace HoustonRadarCSharpAppEx
             rdr.Connect();
         }
  
+        static async Task ConnectToAPI(int ip)
+        {
+            string url = "https://api.spectrumtraffic.com/radar.php?act=get_schedules&ip_address=161.184.106." + ip.ToString();
+ 
+            using (HttpClient client = new HttpClient())
+            {
+                try
+                {
+                    HttpResponseMessage response = await client.GetAsync(url);
+                    response.EnsureSuccessStatusCode();
+ 
+                    string responseBody = await response.Content.ReadAsStringAsync();
+                    Console.WriteLine("Raw JSON Response:");
+                    Console.WriteLine(responseBody);
+ 
+                    // Split the string into lines
+                    string[] lines = responseBody.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+ 
+                    for (int i = 0; i < lines.Length; i++)
+                    {
+                        if (lines[i].Contains("[\"start\"]")) 
+                        {
+                            string line = lines[i + 1];
+                            int startingIndex = line.IndexOf('\"') + 1;
+                            int endingIndex = line.LastIndexOf('\"');
+                            long startTime = long.Parse(line.Substring(startingIndex).Trim('"'));
+                            Console.WriteLine("Start time: " + line.Substring(startingIndex).Trim('"'));
+                        }
+ 
+                        if (lines[i].Contains("[\"end\"]"))
+                        {
+                            string line = lines[i + 1];
+                            int startingIndex = line.IndexOf('\"') + 1;
+                            int endingIndex = line.LastIndexOf('\"');
+                            long endTime = long.Parse(line.Substring(startingIndex).Trim('"'));
+                            Console.WriteLine("End time: " + line.Substring(startingIndex).Trim('"'));
+                            Thread.Sleep(5000);
+                            break;
+                        }
+                    }
+ 
+                }
+                catch (HttpRequestException e) { Console.WriteLine($"Request error: {e.Message}"); }
+            }
+            Thread.Sleep(9000);
+        }
  
         private static void readData(radarCommClassThd rdr, int ip)
         {
@@ -208,4 +233,23 @@ namespace HoustonRadarCSharpAppEx
             Console.WriteLine("Out of Band Data: " + e.oobdata);
         }
     }
+ 
+    public class ApiResponse
+    {
+        [JsonProperty("err")]
+        public int Error { get; set; }
+ 
+        [JsonProperty("schedules")]
+        public List<Schedule> Schedules { get; set; } = new List<Schedule>();
+    }
+ 
+    public class Schedule
+    {
+        [JsonProperty("start")]
+        public string Start { get; set; }
+ 
+        [JsonProperty("end")]
+        public string End { get; set; }
+    }
+ 
 }
