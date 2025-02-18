@@ -16,6 +16,7 @@ using System.Threading;
 using HoustonRadarLLC.DAL.Comm;
 using HoustonRadarLLC.Models.Comm;
 using System.IO;
+using Newtonsoft.Json.Linq;
  
 namespace HoustonRadarCSharpAppEx
 {
@@ -27,10 +28,10 @@ namespace HoustonRadarCSharpAppEx
         private static int totalbytes = 0;
         private static int totalpackets = 0;
  
-        private static DateTime end = new DateTime(2025, 02, 13);
-        private static DateTime start = new DateTime(2025, 02, 11);
+        private static DateTime start = new DateTime();
+        private static DateTime end = new DateTime();
  
-        private static int[] radarIPs = { 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59 };
+        private static int[] radarIPs = new int[20];
         private static radarCommClassThd curRadar;
  
         static void Main(string[] args)
@@ -39,6 +40,7 @@ namespace HoustonRadarCSharpAppEx
  
             for (int i = 0; i < radarIPs.Length; i++)
             {
+                radarIPs[i] = 40 + i;
                 curRadar = new radarCommClassThd(null);
                 ConnectToRadar(curRadar, radarIPs[i]);
             }
@@ -46,7 +48,7 @@ namespace HoustonRadarCSharpAppEx
             pauseEvent.WaitOne();
             Console.WriteLine("Connection completed.");
  
-            Thread.Sleep(5000);
+            Thread.Sleep(90000);
         }
  
         private static void ConnectToRadar(radarCommClassThd rdr, int ip)
@@ -84,46 +86,39 @@ namespace HoustonRadarCSharpAppEx
                 try
                 {
                     HttpResponseMessage response = await client.GetAsync(url);
-                    response.EnsureSuccessStatusCode();
+                    response.EnsureSuccessStatusCode(); // Throws an exception if the status code is not 200-299
  
-                    string responseBody = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine("Raw JSON Response:");
-                    Console.WriteLine(responseBody);
+                    string jsonResponse = await response.Content.ReadAsStringAsync();
  
-                    // Split the string into lines
-                    string[] lines = responseBody.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+                    // Parse JSON response
+                    JObject json = JObject.Parse(jsonResponse);
  
-                    for (int i = 0; i < lines.Length; i++)
+                    // Access the "start" and "end" elements
+                    if (json["schedules"] != null && json["schedules"].HasValues)
                     {
-                        if (lines[i].Contains("[\"start\"]")) 
-                        {
-                            string line = lines[i + 1];
-                            int startingIndex = line.IndexOf('\"') + 1;
-                            int endingIndex = line.LastIndexOf('\"');
-                            long startTime = long.Parse(line.Substring(startingIndex).Trim('"'));
-                            Console.WriteLine("Start time: " + line.Substring(startingIndex).Trim('"'));
-                        }
+                        string fakeStart = json["schedules"][0]["start"].ToString();
+                        string fakeEnd = json["schedules"][0]["end"].ToString();
  
-                        if (lines[i].Contains("[\"end\"]"))
-                        {
-                            string line = lines[i + 1];
-                            int startingIndex = line.IndexOf('\"') + 1;
-                            int endingIndex = line.LastIndexOf('\"');
-                            long endTime = long.Parse(line.Substring(startingIndex).Trim('"'));
-                            Console.WriteLine("End time: " + line.Substring(startingIndex).Trim('"'));
-                            Thread.Sleep(5000);
-                            break;
-                        }
+                        //start = DateTimeOffset.FromUnixTimeSeconds(long.Parse(fakeStart)).LocalDateTime;
+                        //end = DateTimeOffset.FromUnixTimeSeconds(long.Parse(fakeEnd)).LocalDateTime;
+ 
+                        start = new DateTime(2024, 05, 07, 00, 00, 00);
+                        end = new DateTime(2024, 05, 07, 23, 59, 59);
+ 
+                        Console.WriteLine($"Start: {start}");
+                        Console.WriteLine($"End: {end}");
                     }
- 
+                    else { Console.WriteLine("Schedules not found in the response."); }
                 }
-                catch (HttpRequestException e) { Console.WriteLine($"Request error: {e.Message}"); }
+                catch (Exception ex) { Console.WriteLine("Error: " + ex.Message); }
             }
-            Thread.Sleep(9000);
+            //Thread.Sleep(9000);
         }
  
         private static void readData(radarCommClassThd rdr, int ip)
         {
+ 
+            Console.WriteLine("entered readData function for " + ip + "!!!!!");
  
             HoustonRadarLLC.speedLanePreformedQueries schema = new HoustonRadarLLC.speedLanePreformedQueries(rdr);
             schema.ReadVehiclesDateRange(start, end);
@@ -136,7 +131,6 @@ namespace HoustonRadarCSharpAppEx
  
             // Look at individual vehicles and print date/timestamp, lane, speed, length
             HoustonRadarLLC.speedLanePreformedQueries.speedLaneVehicleRec[] vehicles = schema.getSpeedLaneVehicles();
-            Console.WriteLine("Number of vehicles: " + vehicles.Length);
             parseAndPrintVehicles(speedUnit, lengthUnit, vehicles, ip);
         }
  
@@ -147,17 +141,15 @@ namespace HoustonRadarCSharpAppEx
             Console.WriteLine("Pkt #" + totalpackets + " (Total:" + ((float)totalbytes / 1024.0).ToString("0.0") + "kB)");
         }
  
-        private static void schema_progressPctComplete(int pct)
-        {
-            Console.WriteLine(pct.ToString());
-        }
+        private static void schema_progressPctComplete(int pct) { Console.WriteLine(pct.ToString()); }
  
         private static void parseAndPrintVehicles(string speedUnit, string lengthUnit, HoustonRadarLLC.speedLanePreformedQueries.speedLaneVehicleRec[] vehicles, int ip)
         {
-            Console.WriteLine("apwiehrwpiqhrqpwe");
+            Console.WriteLine("entered parseAndPrintVehicles function for " + ip + "!!!!!");
             using (StreamWriter sw = new StreamWriter(DateTime.Now.ToString("yyyyMMdd-hhmmsstt") + ".json"))
             {
                 sw.WriteLine("Ip address: 161.184.106." + ip);
+                sw.WriteLine("Number of vehicles: " + vehicles.Length);
                 sw.WriteLine("[");
                 foreach (HoustonRadarLLC.speedLanePreformedQueries.speedLaneVehicleRec rec in vehicles)
                 {
@@ -200,9 +192,6 @@ namespace HoustonRadarCSharpAppEx
  
         private static void varRead_progressupdate(int pct, string var, string val, progressenum state)
         {
- 
-            //Console.WriteLine(pct);
- 
             if (state == progressenum.stop)
             {
                 Console.WriteLine("Progress update complete");
@@ -233,23 +222,4 @@ namespace HoustonRadarCSharpAppEx
             Console.WriteLine("Out of Band Data: " + e.oobdata);
         }
     }
- 
-    public class ApiResponse
-    {
-        [JsonProperty("err")]
-        public int Error { get; set; }
- 
-        [JsonProperty("schedules")]
-        public List<Schedule> Schedules { get; set; } = new List<Schedule>();
-    }
- 
-    public class Schedule
-    {
-        [JsonProperty("start")]
-        public string Start { get; set; }
- 
-        [JsonProperty("end")]
-        public string End { get; set; }
-    }
- 
 }
