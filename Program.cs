@@ -33,7 +33,6 @@ namespace HoustonRadarCSharpAppEx
 
         private static int[] radarIPs = new int[20];
         private static radarCommClassThd curRadar;
-        private static int lastIP = 59; 
 
         static void Main(string[] args)
         {
@@ -62,14 +61,11 @@ namespace HoustonRadarCSharpAppEx
             rdr.RadarEventRadarFound += rdr_RadarEventRadarFound;
 
             // Execute readData() when connection setup completes
-            rdr.RadarEventGetInfoDone += async (sender, e) =>
+            rdr.RadarEventGetInfoDone += (sender, e) =>
             {
                 Console.WriteLine("Radar connection established. Now reading data from radar " + rdr.IPaddr);
-
-                Task apiConnect = Task.Run(() => ConnectToAPI(ip));
-                Task dataRead = Task.Run(() => readData(rdr, ip));
-
-                Task.WaitAll(apiConnect, dataRead);
+                ConnectToAPI(ip);
+                readData(rdr, ip);
             };
 
             rdr.RadarEventRadarNotFound += rdr_RadarEventRadarNotFound;
@@ -80,7 +76,7 @@ namespace HoustonRadarCSharpAppEx
             rdr.Connect();
         }
 
-        private static async Task ConnectToAPI(int ip)
+        static void ConnectToAPI(int ip)
         {
             string url = "https://api.spectrumtraffic.com/radar.php?act=get_schedules&ip_address=161.184.106." + ip.ToString();
 
@@ -88,10 +84,12 @@ namespace HoustonRadarCSharpAppEx
             {
                 try
                 {
-                    HttpResponseMessage response = await client.GetAsync(url);
-                    response.EnsureSuccessStatusCode(); // Throws an exception if the status code is not 200-299
+                    // Synchronously fetch response
+                    HttpResponseMessage response = client.GetAsync(url).GetAwaiter().GetResult();
+                    response.EnsureSuccessStatusCode(); // Throws exception if status is not 200-299
 
-                    string jsonResponse = await response.Content.ReadAsStringAsync();
+                    // Synchronously read the response content
+                    string jsonResponse = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
 
                     // Parse JSON response
                     JObject json = JObject.Parse(jsonResponse);
@@ -118,7 +116,7 @@ namespace HoustonRadarCSharpAppEx
             //Thread.Sleep(9000);
         }
 
-        private static async Task readData(radarCommClassThd rdr, int ip)
+        private static void readData(radarCommClassThd rdr, int ip)
         {
 
             Console.WriteLine("entered readData function for " + ip + "!!!!!");
@@ -168,6 +166,7 @@ namespace HoustonRadarCSharpAppEx
                 }
                 sw.WriteLine("]");
             }
+            Console.WriteLine("exited parseAndPrintVehicles function for " + ip);
         }
 
 
