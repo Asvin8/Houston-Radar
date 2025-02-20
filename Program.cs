@@ -11,6 +11,7 @@ using HoustonRadarLLC.DAL.Comm;
 using HoustonRadarLLC;
 using System.IO;
 using System.Net;
+using dotnetCHARTING.WinForms;
 
 namespace HoustonRadarCSharpAppEx
 {
@@ -20,6 +21,8 @@ namespace HoustonRadarCSharpAppEx
         private static CountdownEvent countdown; // Tracks how many radars have finished
         private static DateTime start = new DateTime();
         private static DateTime end = new DateTime();
+
+        private static string gpsLocation = ""; 
 
         static void Main(string[] args)
         {
@@ -33,6 +36,7 @@ namespace HoustonRadarCSharpAppEx
             for (int i = 0; i < radarIPs.Length; i++)
             {
                 radarIPs[i] = 40 + i;
+                gpsLocation = "";
                 var curRadar = new radarCommClassThd(null);
 
                 // Run each connection on a background thread
@@ -65,9 +69,27 @@ namespace HoustonRadarCSharpAppEx
             rdr.RadarEventGetInfoDone += (sender, e) =>
             {
                 Console.WriteLine($"Radar {ip} connected. Now reading data...");
+
+                string[] lines = e.getinfostr.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (string line in lines)
+                {
+                    if (line.StartsWith("POS="))
+                    {
+                        string coordinates = line.Substring(4); // Remove "POS="
+                        string[] parts = coordinates.Split(',');
+
+                        if (parts.Length == 2)
+                        {
+                            gpsLocation += $"Latitude: {parts[0]}";
+                            gpsLocation += $"\nLongitude: {parts[1]}";
+                        }
+                        break;
+                    }
+                }
+
                 ConnectToAPI(ip);
                 readData(rdr, ip);
-                //countdown.Signal();
+
                 radarReady.Set();  // Unblock execution
             };
 
@@ -185,6 +207,7 @@ namespace HoustonRadarCSharpAppEx
             {
                 sw.WriteLine($"Ip address: 161.184.106.{ip}");
                 sw.WriteLine($"Number of vehicles: {vehicles.Length}");
+                sw.WriteLine(gpsLocation);
                 sw.WriteLine("[");
                 foreach (var rec in vehicles)
                 {
