@@ -17,6 +17,7 @@ namespace HoustonRadarCSharpAppEx
 {
     class Program
     {
+        
         private static int[] radarIPs = new int[20];
         private static CountdownEvent countdown; // Tracks how many radars have finished
         private static DateTime start = new DateTime();
