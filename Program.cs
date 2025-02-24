@@ -11,29 +11,22 @@ using HoustonRadarLLC.DAL.Comm;
 using HoustonRadarLLC;
 using System.IO;
 using System.Net;
+using System.IO.Compression;
 using dotnetCHARTING.WinForms;
 
 namespace HoustonRadarCSharpAppEx
 {
     class Program
     {
-        
         private static int[] radarIPs = new int[20];
-        private static CountdownEvent countdown; // Tracks how many radars have finished
         private static DateTime start = new DateTime();
         private static DateTime end = new DateTime();
-
-        private static string gpsLocation = ""; 
+        private static string gpsLocation = "";
 
         static void Main(string[] args)
         {
-            Console.WriteLine("Connection starting...");
+            Console.WriteLine("Program starting...");
 
-            // Initialize the CountdownEvent to the total number of radars
-            //countdown = new CountdownEvent(radarIPs.Length);
-
-            // Create tasks for each radar connection
-            //List<Task> radarTasks = new List<Task>();
             for (int i = 0; i < radarIPs.Length; i++)
             {
                 radarIPs[i] = 40 + i;
@@ -45,16 +38,12 @@ namespace HoustonRadarCSharpAppEx
             }
 
             Console.WriteLine("Waiting for all radar connections...");
-
-            // Wait until all radars are finished (success or fail)
-            //countdown.Wait();
-
             Console.WriteLine("All radars connected or failed. Program will now exit.");
         }
 
         private static void ConnectToRadar(radarCommClassThd rdr, int ip)
         {
-            ManualResetEvent radarReady = new ManualResetEvent(false); // Block until radar connects
+            ManualResetEvent radarReady = new ManualResetEvent(false);
 
             rdr.IPaddr = "161.184.106." + ip.ToString();
             rdr.portnum = 5125;
@@ -76,7 +65,7 @@ namespace HoustonRadarCSharpAppEx
                 {
                     if (line.StartsWith("POS="))
                     {
-                        string coordinates = line.Substring(4); // Remove "POS="
+                        string coordinates = line.Substring(4);
                         string[] parts = coordinates.Split(',');
 
                         if (parts.Length == 2)
@@ -90,37 +79,30 @@ namespace HoustonRadarCSharpAppEx
 
                 ConnectToAPI(ip);
                 readData(rdr, ip);
-
-                radarReady.Set();  // Unblock execution
+                radarReady.Set();
             };
 
             rdr.RadarEventRadarNotFound += (sender, e) =>
             {
                 Console.WriteLine($"Radar {ip} not found.");
-                //countdown.Signal();
-                radarReady.Set();  // Unblock execution
+                radarReady.Set();
             };
 
             rdr.RadarEventCommErr += (sender, e) =>
             {
                 Console.WriteLine($"Radar {ip} communication error: {e.CommErrStr}");
-                //countdown.Signal();
-                radarReady.Set();  // Unblock execution
+                radarReady.Set();
             };
 
             rdr.RadarEventEx += (sender, e) =>
             {
                 Console.WriteLine($"Radar {ip} exception: {e.ex.Message}");
-                //countdown.Signal();
-                radarReady.Set();  // Unblock execution
+                radarReady.Set();
             };
 
             rdr.Connect();
-
-            // Block execution here until the radar event fires
             radarReady.WaitOne();
         }
-
 
         static void ConnectToAPI(int ip)
         {
@@ -129,14 +111,12 @@ namespace HoustonRadarCSharpAppEx
             try
             {
                 HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
-                request.Method = "GET";  // Explicitly use GET method
+                request.Method = "GET";
 
                 using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
                 using (StreamReader reader = new StreamReader(response.GetResponseStream()))
                 {
                     string jsonResponse = reader.ReadToEnd();
-
-                    // Parse JSON response
                     JObject json = JObject.Parse(jsonResponse);
 
                     if (json["schedules"] != null && json["schedules"].HasValues)
@@ -162,19 +142,15 @@ namespace HoustonRadarCSharpAppEx
             }
         }
 
-
         private static void readData(radarCommClassThd rdr, int ip)
         {
             Console.WriteLine($"Entered readData function for radar {ip}...");
 
-            // Example library usage
             speedLanePreformedQueries schema = new speedLanePreformedQueries(rdr);
             schema.ReadVehiclesDateRange(start, end);
-
             schema.progressevent += schema_progressevent;
             schema.progressPctComplete += schema_progressPctComplete;
 
-            // Get the vehicles
             var vehicles = schema.getSpeedLaneVehicles();
             if (vehicles == null || vehicles.Length == 0)
             {
@@ -204,7 +180,10 @@ namespace HoustonRadarCSharpAppEx
         {
             Console.WriteLine($"Entered parseAndPrintVehicles for radar {ip}.");
 
-            using (var sw = new StreamWriter($"{DateTime.Now:yyyyMMdd-HHmmss}_{ip}.json"))
+            string jsonFileName = $"{DateTime.Now:yyyyMMdd-HHmmss}_{ip}.json";
+            string compressedFileName = $"{jsonFileName}.gz";
+
+            using (var sw = new StreamWriter(jsonFileName))
             {
                 sw.WriteLine($"Ip address: 161.184.106.{ip}");
                 sw.WriteLine($"Number of vehicles: {vehicles.Length}");
@@ -214,10 +193,10 @@ namespace HoustonRadarCSharpAppEx
                 {
                     sw.WriteLine(
                         "\t{" +
-                        $"\n\t\tTimeEnding: {rec._dt}" +
-                        $"\n\t\tLane: {rec._lane}" +
-                        $"\n\t\tSpeed: {rec._speed} {speedUnit}" +
-                        $"\n\t\tLength: {Math.Round(rec._length) / 100.0} {lengthUnit}" +
+                        $"\n\t\tTimeEnding: {rec._dt}," +
+                        $"\n\t\tLane: {rec._lane}," +
+                        $"\n\t\tSpeed: {rec._speed} {speedUnit}," +
+                        $"\n\t\tLength: {Math.Round(rec._length) / 100.0} {lengthUnit}," +
                         $"\n\t\tDirection: {rec._direction}" +
                         "\n\t},"
                     );
@@ -225,7 +204,21 @@ namespace HoustonRadarCSharpAppEx
                 sw.WriteLine("]");
             }
 
-            Console.WriteLine($"JSON file created for radar {ip}.");
+            Console.WriteLine($"JSON file created: {jsonFileName}");
+
+            // compress json file
+            CompressJsonFile(jsonFileName, compressedFileName);
+            Console.WriteLine($"Compressed file created: {compressedFileName}");
+        }
+
+        private static void CompressJsonFile(string inputFile, string outputFile)
+        {
+            using (FileStream inputStream = new FileStream(inputFile, FileMode.Open, FileAccess.Read))
+            using (FileStream outputStream = new FileStream(outputFile, FileMode.Create))
+            using (GZipStream gzipStream = new GZipStream(outputStream, CompressionMode.Compress))
+            {
+                inputStream.CopyTo(gzipStream);
+            }
         }
     }
 }
