@@ -27,13 +27,11 @@ namespace HoustonRadarCSharpAppEx
         {
             Console.WriteLine("Program starting...");
 
-            for (int i = 0; i < radarIPs.Length; i++)
+            for (int i = 10; i < radarIPs.Length; i++)
             {
                 radarIPs[i] = 40 + i;
                 gpsLocation = "";
                 var curRadar = new radarCommClassThd(null);
-
-                // Run each connection on a background thread
                 ConnectToRadar(curRadar, radarIPs[i]);
             }
 
@@ -106,7 +104,7 @@ namespace HoustonRadarCSharpAppEx
 
         static void ConnectToAPI(int ip)
         {
-            string url = $"https://api.spectrumtraffic.com/radar.php?act=get_schedules&ip_address=161.184.106.{ip}";
+            string url = $"http://api.spectrumtraffic.com/radar.php?act=get_schedules&ip_address=161.184.106.{ip}";
 
             try
             {
