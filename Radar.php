@@ -7,8 +7,7 @@ include_once("Traffic_Data/config.inc.php");
 include_once("Traffic_Data/td.inc.php");
 include_once("Traffic_Data/ac.inc.php");
 
-//include_once(SMARTY_LIB . '/Smarty.class.php');
-
+// Set security headers
 header("Content-Security-Policy: script-src 'self' http://api.spectrumtraffic.com");
 header("Access-Control-Allow-Origin: *");
 header("access-control-allow-credentials: true");
@@ -16,96 +15,80 @@ header("access-control-allow-headers: content-type");
 header("access-control-allow-methods: GET,HEAD,PUT,PATCH,POST,DELETE");
 header("access-control-allow-origin: http://localhost:3001");
 
-//$_POST = json_decode(file_get_contents("php://input"), true);
+// Determine the requested action
+$act = $_POST['act'] ?? $_GET['act'] ?? null;
 
-//Check Which Action To Perform:
-if (isset($_POST['act'])) { $act = trim($_POST['act']); }
-elseif (isset($_GET['act'])) { $act = trim($_GET['act']); }
-else { $act = null; }
-
-function isValidIPv4($ip) { return filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false; }
-
-function errorOccured($errorMessage) {
-  $resultant['err'] = 1;
-  $resultant['message'] = $errorMessage;
-  echo json_encode($resultant);
-  exit(0);
+function isValidIPv4($ip) {
+    return filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false;
 }
 
-$err = null;
+function errorOccured($errorMessage) {
+    echo json_encode(["err" => 1, "message" => $errorMessage]);
+    exit(0);
+}
 
 switch ($act) {
 
-  case "get_schedules":
+    case "get_schedules":
+        $resultant = ["err" => 0];
+        $ip_address = $_GET['ip_address'] ?? null;
 
-    $resultant['err'] = 0;
-    $ip_address = is_null($_GET['ip_address']) ? null : trim($_GET['ip_address']);
+        if (!isValidIPv4($ip_address)) {
+            errorOccured("Invalid IP address format");
+        }
 
-    if (!isValidIPv4($ip_address)) {
-      $resultant['err'] = 1;
-      $resultant['message'] = "Invalid IP address format";
-      echo json_encode($resultant);
-      exit(0);
-    }
+        $start = new DateTime("2024-05-07 00:00:00");
+        $end = new DateTime("2024-05-07 23:59:59");
 
-    $start = new DateTime("2024-05-07 00:00:00");
-    $end = new DateTime("2024-05-07 23:59:59");
+        $resultant['schedules'] = [
+            ["start" => $start->format('U'), "end" => $end->format('U')]
+        ];
 
-    if (!is_null($ip_address)) {
-      $schedules[0]['start'] = $start->format('U');
-      $schedules[0]['end'] = $end->format('U');
-      $resultant['schedules'] = $schedules;
-    } else {
-      $resultant['err'] = 1;
-      $resultant['message'] = "Invalid IP address";
-    }
+        echo json_encode($resultant);
+        exit(0);
 
-    echo json_encode($resultant);
-    exit(0);
+    case "upload_gzip":
+        header("Content-Type: application/json");
 
-  case "upload_gzip":
+        // Check if file was uploaded
+        if (!isset($_FILES['file']) || $_FILES['file']['error'] !== 0) {
+            errorOccured("No valid file was uploaded.");
+        }
 
-    print_r($_FILES);
+        // Validate GZIP file type
+        if ($_FILES['file']['type'] !== "application/gzip") {
+            errorOccured("Invalid file type: " . $_FILES['file']['type']);
+        }
 
-    // check if file was uploaded
-    if(!isset($_FILES['file'])) { errorOccured("no file was sent to API"); }
+        // Read and decompress GZIP data in memory
+        $gzipFilePath = $_FILES['file']['tmp_name'];
+        $compressedData = file_get_contents($gzipFilePath);
 
-    // only accept gzip file
-    $fileType = $_FILES['file']['type'];
-    if($fileType !== "application/gzip") { errorOccured("Invalid file type"); }
+        if ($compressedData === false) {
+            errorOccured("Failed to read uploaded GZIP file.");
+        }
 
-    // save uploaded file
-    $uploadDir = __DIR__ . "/uploads/";
-    if(!is_dir($uploadDir)) { mkdir($uploadDir, 0777, true); }
+        // Decompress GZIP data
+        $jsonContent = gzdecode($compressedData);
 
-    // check if file upload failed
-    $uploadedFilePath = $uploadDir . basename($_FILES['file']['name']);
-    if(!move_uploaded_file($_FILES['file']['tmp_name'], $uploadedFilePath)) { errorOccured("File failed to upload"); }
+        if ($jsonContent === false) {
+            errorOccured("Failed to decompress GZIP file.");
+        }
 
-    // decompress file
-    $jsonFilePath = str_replace(".gz", "", $uploadedFilePath);
-    $gzFile = gzopen($uploadedFilepath, 'rb');
-    if(!$gzFile) { errorOccured("Failed to open gz file"); }
+        // Decode JSON
+        $decodedJson = json_decode($jsonContent, true);
+        if ($decodedJson === null) {
+            errorOccured("Invalid JSON format in GZIP file.");
+        }
 
-    // parse gz zip file into JSON
-    $jsonContent = "";
-    while(!gzeof(gzFile)) { $jsonContent .= gzread($gzFile, 4096);  }
-    gzclose($gzFile);
+        // Return JSON response
+        echo json_encode([
+            "err" => 0,
+            "message" => "File uploaded and processed successfully",
+            "json_contents" => $decodedJson
+        ], JSON_PRETTY_PRINT);
+        exit(0);
 
-    // print JSON info
-    $resultant['err'] = 0;
-    $resultant['message'] = "File uploaded and decompressed successfully";
-    $resultant['file_path'] = $uploadedFilePath;
-    $resultant['json_contents'] = json_decode($jsonContent, true);
-    echo json_encode($resultant, JSON_PRETTY_PRINT);
-    exit(0);
-
-  default:
-
-    $resultant['err'] = 1;
-    $resultant['errors'] = 'Unknown method';
-    echo json_encode($resultant);
-    exit(0);
+    default:
+        errorOccured("Unknown method");
 }
-
-?>
