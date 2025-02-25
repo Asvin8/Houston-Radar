@@ -88,6 +88,10 @@ switch ($act) {
         errorOccured("Failed to decompress GZIP file.");
     }
 
+    echo "Hex Dump: " . bin2hex(substr($jsonContent, 0, 50)) . "\n"; 
+
+    if(!mb_check_encoding($jsonContent, 'UTF-8')) { errorOccured("Invalid character encoding in JSON"); }
+
     // Decode JSON
     $decodedJson = json_decode($jsonContent, true);
     if ($decodedJson === null) {
