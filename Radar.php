@@ -31,6 +31,13 @@ else { $act = null; }
 
 function isValidIPv4($ip) { return filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false; }
 
+function errorOccored($errorMessage) {
+  $resultant['err'] = 1;
+  $resultant['message'] = $errorMessage;
+  echo json_encode($resultant);
+  exit(0);
+}
+
 $err = null;
 
 switch ($act) {
@@ -66,19 +73,13 @@ switch ($act) {
 
       // check if file was uploaded
       if(!isset($_FILES['files'])) {
-        $resultant['err'] = 1;
-        $resultant['message'] = "no file was sent to API";
-        echo json_encode($resultant);
-        exit(0);
+        errorOccured("no file was sent to API");
       }
 
       // only accept gzip file
       $fileType = $_FILES['file']['type'];
       if($fileType !== "application/gzip") {
-        $resultant['err'] = 1;
-        $resultant['message'] = "Invalid file type";
-        echo json_encode($resultant);
-        exit(0);
+        errorOccured("Invalid file type");
       }
 
       // save uploaded file
@@ -88,20 +89,14 @@ switch ($act) {
       // check if file upload failed
       $uploadedFilePath = $uploadDir . basename($_FILES['file']['name']);
       if(!move_uploaded_file($_FILES['file']['tmp_name'], $uploadedFilePath)) {
-        $resultant['err'] = 1;
-        $resultant['message'] = "File failed to upload";
-        echo json_encode($resultant);
-        exit(0);
+        errorOccured("File failed to upload");
       }
 
       // decompress file
       $jsonFilePath = str_replace(".gz", "", $uploadedFilePath);
       $gzFile = gzopen($uploadedFilepath, 'rb');
       if(!$gzFile) {
-        $resultant['err'] = 1;
-        $resultant['message'] = "Failed to open gz file";
-        echo json_encode($resultant);
-        exit(0);
+        errorOccured("Failed to open gz file");
       }
 
       // parse gz zip file into JSON
@@ -116,7 +111,6 @@ switch ($act) {
       $resultant['json_contents'] = json_decode($jsonContent, true);
       echo json_encode($resultant, JSON_PRETTY_PRINT);
       exit(0);
-      
 
   default:
 
