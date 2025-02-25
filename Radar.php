@@ -16,6 +16,12 @@ header("access-control-allow-headers: content-type");
 header("access-control-allow-methods: GET,HEAD,PUT,PATCH,POST,DELETE");
 header("access-control-allow-origin: http://localhost:3001");
 
+// display errors
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
+
 $_POST = json_decode(file_get_contents("php://input"), true);
 
 //Check Which Action To Perform:
