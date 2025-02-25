@@ -64,32 +64,38 @@ switch ($act) {
     exit(0);
 
   case "upload_gzip":
-
-    // Start GZIP compression
-    if (!ob_start("ob_gzhandler")) {
-        errorOccured("Failed to start GZIP compression");
-    }
+    // Debugging log: Ensure PHP script is executed
+    error_log("upload_gzip API called");
 
     // Check if file was uploaded
-    if (!isset($_FILES['file'])) { errorOccured("No file was sent to API"); }
+    if (!isset($_FILES['file'])) { 
+        error_log("No file was sent to API"); 
+        errorOccured("No file was sent to API");
+    }
 
     // Only accept gzip file
     $fileType = $_FILES['file']['type'];
-    if ($fileType !== "application/gzip") { errorOccured("Invalid file type"); }
+    if ($fileType !== "application/gzip") { 
+        error_log("Invalid file type: " . $fileType); 
+        errorOccured("Invalid file type");
+    }
 
     // Save uploaded file
     $uploadDir = __DIR__ . "/uploads/";
     if (!is_dir($uploadDir)) { mkdir($uploadDir, 0777, true); }
 
     $uploadedFilePath = $uploadDir . basename($_FILES['file']['name']);
-    if (!move_uploaded_file($_FILES['file']['tmp_name'], $uploadedFilePath)) {
+    if (!move_uploaded_file($_FILES['file']['tmp_name'], $uploadedFilePath)) { 
+        error_log("File failed to upload"); 
         errorOccured("File failed to upload");
     }
 
     // Decompress file
-    $jsonFilePath = str_replace(".gz", "", $uploadedFilePath);
     $gzFile = gzopen($uploadedFilePath, 'rb');
-    if (!$gzFile) { errorOccured("Failed to open gz file"); }
+    if (!$gzFile) { 
+        error_log("Failed to open gz file"); 
+        errorOccured("Failed to open gz file");
+    }
 
     // Read and decompress GZIP file
     $jsonContent = "";
@@ -100,23 +106,24 @@ switch ($act) {
 
     // Decode JSON
     $decodedJson = json_decode($jsonContent, true);
-    if ($decodedJson === null) { errorOccured("Invalid JSON format in GZIP file"); }
+    if ($decodedJson === null) { 
+        error_log("Invalid JSON format in GZIP file"); 
+        errorOccured("Invalid JSON format in GZIP file");
+    }
 
-    // Set response headers
-    header("Content-Encoding: gzip");  // Inform client that response is GZIP compressed
-    header("Content-Type: application/json");  // Specify JSON format
-    header("Vary: Accept-Encoding");  // Helps caching proxies handle encoding
+    // Debug: Log successful processing
+    error_log("File uploaded and processed successfully");
 
-    // Compress and output response
-    ob_start();
+    // Return JSON response
+    header("Content-Type: application/json");
     echo json_encode([
         "err" => 0,
         "message" => "File uploaded and decompressed successfully",
         "file_path" => $uploadedFilePath,
         "json_contents" => $decodedJson
     ], JSON_PRETTY_PRINT);
-    ob_end_flush();
     exit(0);
+
 
 
   default:
