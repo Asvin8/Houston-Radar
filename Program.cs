@@ -13,6 +13,7 @@ using System.IO;
 using System.Net;
 using System.IO.Compression;
 using dotnetCHARTING.WinForms;
+using System.Net.Http.Headers;
 
 namespace HoustonRadarCSharpAppEx
 {
@@ -27,7 +28,7 @@ namespace HoustonRadarCSharpAppEx
         {
             Console.WriteLine("Program starting...");
 
-            for (int i = 10; i < radarIPs.Length; i++)
+            for (int i = 13; i < radarIPs.Length; i++)
             {
                 radarIPs[i] = 40 + i;
                 gpsLocation = "";
@@ -75,7 +76,7 @@ namespace HoustonRadarCSharpAppEx
                     }
                 }
 
-                ConnectToAPI(ip);
+                ReadScheduleAPI(ip);
                 readData(rdr, ip);
                 radarReady.Set();
             };
@@ -102,12 +103,11 @@ namespace HoustonRadarCSharpAppEx
             radarReady.WaitOne();
         }
 
-        static void ConnectToAPI(int ip)
+        private static void ReadScheduleAPI(int ip)
         {
             string url = $"http://api.spectrumtraffic.com/radar.php?act=get_schedules&ip_address=161.184.106.{ip}";
 
-            try
-            {
+            try {
                 HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
                 request.Method = "GET";
 
@@ -125,50 +125,35 @@ namespace HoustonRadarCSharpAppEx
                         start = DateTimeOffset.FromUnixTimeSeconds(long.Parse(fakeStart)).LocalDateTime;
                         end = DateTimeOffset.FromUnixTimeSeconds(long.Parse(fakeEnd)).LocalDateTime;
 
+                        //end = DateTime.Now;
+                        //start = end.AddDays(-3); 
+
                         Console.WriteLine($"Start: {start}");
                         Console.WriteLine($"End: {end}");
                     }
-                    else
-                    {
-                        Console.WriteLine($"Radar {ip}: No schedules found.");
-                    }
+                    else { Console.WriteLine($"Radar {ip}: No schedules found."); }
                 }
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Radar {ip} API error: {ex.Message}");
-            }
+            catch (Exception ex) { Console.WriteLine($"Radar {ip} API error: {ex.Message}"); }
         }
 
-        private static void readData(radarCommClassThd rdr, int ip)
-        {
+        private static void readData(radarCommClassThd rdr, int ip) {
             Console.WriteLine($"Entered readData function for radar {ip}...");
 
             speedLanePreformedQueries schema = new speedLanePreformedQueries(rdr);
             schema.ReadVehiclesDateRange(start, end);
             schema.progressevent += schema_progressevent;
             schema.progressPctComplete += schema_progressPctComplete;
-
             var vehicles = schema.getSpeedLaneVehicles();
-            if (vehicles == null || vehicles.Length == 0)
-            {
-                Console.WriteLine($"No vehicles found for radar {ip}.");
-            }
-            else
-            {
-                parseAndPrintVehicles("km/h", "m", vehicles, ip);
-            }
+
+            if (vehicles == null || vehicles.Length == 0) { Console.WriteLine($"No vehicles found for radar {ip}."); }
+            else { parseAndPrintVehicles("km/h", "m", vehicles, ip); }
         }
 
-        private static void schema_progressevent(int packetno, int bytes)
-        {
-            Console.WriteLine($"Packet #{packetno}, bytes: {bytes}");
-        }
 
-        private static void schema_progressPctComplete(int pct)
-        {
-            Console.WriteLine($"Progress: {pct}%");
-        }
+        private static void schema_progressevent(int packetno, int bytes) { Console.WriteLine($"Packet #{packetno}, bytes: {bytes}"); }
+
+        private static void schema_progressPctComplete(int pct) { Console.WriteLine($"Progress: {pct}%"); }
 
         private static void parseAndPrintVehicles(
             string speedUnit,
@@ -181,8 +166,7 @@ namespace HoustonRadarCSharpAppEx
             string jsonFileName = $"{DateTime.Now:yyyyMMdd-HHmmss}_{ip}.json";
             string compressedFileName = $"{jsonFileName}.gz";
 
-            using (var sw = new StreamWriter(jsonFileName))
-            {
+            using (var sw = new StreamWriter(jsonFileName)) {
                 sw.WriteLine($"Ip address: 161.184.106.{ip}");
                 sw.WriteLine($"Number of vehicles: {vehicles.Length}");
                 sw.WriteLine(gpsLocation);
@@ -205,18 +189,53 @@ namespace HoustonRadarCSharpAppEx
             Console.WriteLine($"JSON file created: {jsonFileName}");
 
             // compress json file
-            CompressJsonFile(jsonFileName, compressedFileName);
+            ProcessJsonFile(jsonFileName, compressedFileName);
             Console.WriteLine($"Compressed file created: {compressedFileName}");
         }
 
-        private static void CompressJsonFile(string inputFile, string outputFile)
-        {
+        private static void ProcessJsonFile(string inputFile, string outputFile) {
+
+            // compress json file
             using (FileStream inputStream = new FileStream(inputFile, FileMode.Open, FileAccess.Read))
             using (FileStream outputStream = new FileStream(outputFile, FileMode.Create))
-            using (GZipStream gzipStream = new GZipStream(outputStream, CompressionMode.Compress))
+            using (GZipStream gzipStream = new GZipStream(outputStream, CompressionMode.Compress)) { inputStream.CopyTo(gzipStream); }
+
+            // send gzip file via post request
+            string url = "http://api.spectrumtraffic.com/radar.php?act=upload_gzip";
+            string gzipFilePath = outputFile;  // Your GZIP-compressed JSON file
+
+            // Read the GZIP file
+            byte[] compressedData = File.ReadAllBytes(gzipFilePath);
+
+            // Create HttpWebRequest
+            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
+            request.Method = "POST";
+            request.ContentType = "application/gzip";  // Your PHP server expects GZIP
+            request.Accept = "application/json";  // Expecting a regular JSON response
+            request.ContentLength = compressedData.Length;
+
+            // Write GZIP data to request stream
+            using (Stream requestStream = request.GetRequestStream()) { requestStream.Write(compressedData, 0, compressedData.Length); }
+
+            // Get and process the response (JSON, not GZIP)
+            try
             {
-                inputStream.CopyTo(gzipStream);
+                using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
+                using (StreamReader reader = new StreamReader(response.GetResponseStream()))
+                {
+                    string responseText = reader.ReadToEnd();
+                    Console.WriteLine("Response: " + responseText);
+                }
             }
+            catch (WebException ex)
+            {
+                using (StreamReader reader = new StreamReader(ex.Response.GetResponseStream()))
+                {
+                    string errorText = reader.ReadToEnd();
+                    Console.WriteLine("Error: " + errorText);
+                }
+            }
+
         }
     }
 }
