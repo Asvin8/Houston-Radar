@@ -16,12 +16,6 @@ header("access-control-allow-headers: content-type");
 header("access-control-allow-methods: GET,HEAD,PUT,PATCH,POST,DELETE");
 header("access-control-allow-origin: http://localhost:3001");
 
-// display errors
-// ini_set('display_errors', 1);
-// ini_set('display_startup_errors', 1);
-// error_reporting(E_ALL);
-
-
 //$_POST = json_decode(file_get_contents("php://input"), true);
 
 //Check Which Action To Perform:
@@ -69,48 +63,40 @@ switch ($act) {
     echo json_encode($resultant);
     exit(0);
 
-    case "upload_gzip":
+  case "upload_gzip":
 
-      // check if file was uploaded
-      if(!isset($_FILES['files'])) {
-        errorOccured("no file was sent to API");
-      }
+    // check if file was uploaded
+    if(!isset($_FILES['files'])) { errorOccured("no file was sent to API"); }
 
-      // only accept gzip file
-      $fileType = $_FILES['file']['type'];
-      if($fileType !== "application/gzip") {
-        errorOccured("Invalid file type");
-      }
+    // only accept gzip file
+    $fileType = $_FILES['file']['type'];
+    if($fileType !== "application/gzip") { errorOccured("Invalid file type"); }
 
-      // save uploaded file
-      $uploadDir = __DIR__ . "/uploads/";
-      if(!is_dir($uploadDir)) { mkdir($uploadDir, 0777, true); }
+    // save uploaded file
+    $uploadDir = __DIR__ . "/uploads/";
+    if(!is_dir($uploadDir)) { mkdir($uploadDir, 0777, true); }
 
-      // check if file upload failed
-      $uploadedFilePath = $uploadDir . basename($_FILES['file']['name']);
-      if(!move_uploaded_file($_FILES['file']['tmp_name'], $uploadedFilePath)) {
-        errorOccured("File failed to upload");
-      }
+    // check if file upload failed
+    $uploadedFilePath = $uploadDir . basename($_FILES['file']['name']);
+    if(!move_uploaded_file($_FILES['file']['tmp_name'], $uploadedFilePath)) { errorOccured("File failed to upload"); }
 
-      // decompress file
-      $jsonFilePath = str_replace(".gz", "", $uploadedFilePath);
-      $gzFile = gzopen($uploadedFilepath, 'rb');
-      if(!$gzFile) {
-        errorOccured("Failed to open gz file");
-      }
+    // decompress file
+    $jsonFilePath = str_replace(".gz", "", $uploadedFilePath);
+    $gzFile = gzopen($uploadedFilepath, 'rb');
+    if(!$gzFile) { errorOccured("Failed to open gz file"); }
 
-      // parse gz zip file into JSON
-      $jsonContent = "";
-      while(!gzeof(gzFile)) { $jsonContent .= gzread($gzFile, 4096);  }
-      gzclose($gzFile);
+    // parse gz zip file into JSON
+    $jsonContent = "";
+    while(!gzeof(gzFile)) { $jsonContent .= gzread($gzFile, 4096);  }
+    gzclose($gzFile);
 
-      // print JSON info
-      $resultant['err'] = 0;
-      $resultant['message'] = "File uploaded and decompressed successfully";
-      $resultant['file_path'] = $uploadedFilePath;
-      $resultant['json_contents'] = json_decode($jsonContent, true);
-      echo json_encode($resultant, JSON_PRETTY_PRINT);
-      exit(0);
+    // print JSON info
+    $resultant['err'] = 0;
+    $resultant['message'] = "File uploaded and decompressed successfully";
+    $resultant['file_path'] = $uploadedFilePath;
+    $resultant['json_contents'] = json_decode($jsonContent, true);
+    echo json_encode($resultant, JSON_PRETTY_PRINT);
+    exit(0);
 
   default:
 
@@ -119,4 +105,5 @@ switch ($act) {
     echo json_encode($resultant);
     exit(0);
 }
->
+
+?>
