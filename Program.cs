@@ -14,6 +14,10 @@ using System.Net;
 using System.IO.Compression;
 using dotnetCHARTING.WinForms;
 using System.Net.Http.Headers;
+using System.Text;
+using Newtonsoft.Json; 
+using System.Linq;
+
 
 namespace HoustonRadarCSharpAppEx
 {
@@ -22,7 +26,8 @@ namespace HoustonRadarCSharpAppEx
         private static int[] radarIPs = new int[20];
         private static DateTime start = new DateTime();
         private static DateTime end = new DateTime();
-        private static string gpsLocation = "";
+        private static double latitude = -1;
+        private static double longitude = -1;
 
         static void Main(string[] args)
         {
@@ -31,7 +36,8 @@ namespace HoustonRadarCSharpAppEx
             for (int i = 13; i < radarIPs.Length; i++)
             {
                 radarIPs[i] = 40 + i;
-                gpsLocation = "";
+                latitude = -1;
+                longitude = -1; 
                 var curRadar = new radarCommClassThd(null);
                 ConnectToRadar(curRadar, radarIPs[i]);
             }
@@ -69,8 +75,8 @@ namespace HoustonRadarCSharpAppEx
 
                         if (parts.Length == 2)
                         {
-                            gpsLocation += $"Latitude: {parts[0]}";
-                            gpsLocation += $"\nLongitude: {parts[1]}";
+                            latitude = double.Parse(parts[0]);
+                            longitude = double.Parse(parts[1]);
                         }
                         break;
                     }
@@ -156,66 +162,86 @@ namespace HoustonRadarCSharpAppEx
         private static void schema_progressPctComplete(int pct) { Console.WriteLine($"Progress: {pct}%"); }
 
         private static void parseAndPrintVehicles(
-            string speedUnit,
-            string lengthUnit,
-            speedLanePreformedQueries.speedLaneVehicleRec[] vehicles,
-            int ip)
+         string speedUnit,
+         string lengthUnit,
+         speedLanePreformedQueries.speedLaneVehicleRec[] vehicles,
+         int ip)
         {
             Console.WriteLine($"Entered parseAndPrintVehicles for radar {ip}.");
+
+            // Construct JSON object
+            var jsonObject = new
+            {
+                ip_address = $"161.184.106.{ip}",
+                num_vehicles = vehicles?.Length ?? 0,
+                jsonLatitude = latitude,
+                jsonLongitude = longitude,
+                vehicles = vehicles?.AsEnumerable().Select(rec => new
+                {
+                    TimeEnding = rec._dt,
+                    Lane = rec._lane,
+                    Speed = $"{rec._speed} {speedUnit}",
+                    Length = $"{Math.Round(rec._length) / 100.0} {lengthUnit}",
+                    Direction = rec._direction
+                }).ToList()
+            };
 
             string jsonFileName = $"{DateTime.Now:yyyyMMdd-HHmmss}_{ip}.json";
             string compressedFileName = $"{jsonFileName}.gz";
 
-            using (var sw = new StreamWriter(jsonFileName)) {
-                sw.WriteLine($"Ip address: 161.184.106.{ip}");
-                sw.WriteLine($"Number of vehicles: {vehicles.Length}");
-                sw.WriteLine(gpsLocation);
-                sw.WriteLine("[");
-                foreach (var rec in vehicles)
-                {
-                    sw.WriteLine(
-                        "\t{" +
-                        $"\n\t\tTimeEnding: {rec._dt}," +
-                        $"\n\t\tLane: {rec._lane}," +
-                        $"\n\t\tSpeed: {rec._speed} {speedUnit}," +
-                        $"\n\t\tLength: {Math.Round(rec._length) / 100.0} {lengthUnit}," +
-                        $"\n\t\tDirection: {rec._direction}" +
-                        "\n\t},"
-                    );
-                }
-                sw.WriteLine("]");
-            }
+            // Convert object to JSON string with indentation
+            string jsonData = JsonConvert.SerializeObject(jsonObject, Formatting.Indented);
+
+            // Debug: Print JSON before compression
+            Console.WriteLine("Raw JSON before compression:");
+            Console.WriteLine(jsonData);
+
+            // Save JSON to file with UTF-8 encoding
+            File.WriteAllText(jsonFileName, jsonData, new UTF8Encoding(false));
 
             Console.WriteLine($"JSON file created: {jsonFileName}");
 
-            // compress json file
+            // Compress and upload JSON file
             ProcessJsonFile(jsonFileName, compressedFileName);
             Console.WriteLine($"Compressed file created: {compressedFileName}");
         }
 
-        private static void ProcessJsonFile(string inputFile, string outputFile) {
-
-            // compress json file
+        private static void ProcessJsonFile(string inputFile, string outputFile)
+        {
+            // Compress JSON file
             using (FileStream inputStream = new FileStream(inputFile, FileMode.Open, FileAccess.Read))
             using (FileStream outputStream = new FileStream(outputFile, FileMode.Create))
-            using (GZipStream gzipStream = new GZipStream(outputStream, CompressionMode.Compress)) { inputStream.CopyTo(gzipStream); }
+            using (GZipStream gzipStream = new GZipStream(outputStream, CompressionMode.Compress))
+            {
+                inputStream.CopyTo(gzipStream);
+            }
 
-            // send gzip file via post request
+            // Define boundary for multipart/form-data
+            string boundary = "---------------------------" + DateTime.Now.Ticks.ToString("x");
             string url = "http://api.spectrumtraffic.com/radar.php?act=upload_gzip";
-            string gzipFilePath = outputFile;  // Your GZIP-compressed JSON file
-
-            // Read the GZIP file
-            byte[] compressedData = File.ReadAllBytes(gzipFilePath);
 
             // Create HttpWebRequest
             HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
             request.Method = "POST";
-            request.ContentType = "application/gzip";  // Your PHP server expects GZIP
-            request.Accept = "application/json";  // Expecting a regular JSON response
-            request.ContentLength = compressedData.Length;
+            request.ContentType = "multipart/form-data; boundary=" + boundary;
 
-            // Write GZIP data to request stream
-            using (Stream requestStream = request.GetRequestStream()) { requestStream.Write(compressedData, 0, compressedData.Length); }
+            using (Stream requestStream = request.GetRequestStream())
+            using (BinaryWriter writer = new BinaryWriter(requestStream))
+            {
+                // Start boundary
+                string boundaryStart = $"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{Path.GetFileName(outputFile)}\"\r\nContent-Type: application/gzip\r\n\r\n";
+                byte[] boundaryStartBytes = System.Text.Encoding.UTF8.GetBytes(boundaryStart);
+                writer.Write(boundaryStartBytes);
+
+                // Write file content
+                byte[] fileData = File.ReadAllBytes(outputFile);
+                writer.Write(fileData);
+
+                // End boundary
+                string boundaryEnd = $"\r\n--{boundary}--\r\n";
+                byte[] boundaryEndBytes = System.Text.Encoding.UTF8.GetBytes(boundaryEnd);
+                writer.Write(boundaryEndBytes);
+            }
 
             // Get and process the response (JSON, not GZIP)
             try
@@ -235,7 +261,7 @@ namespace HoustonRadarCSharpAppEx
                     Console.WriteLine("Error: " + errorText);
                 }
             }
-
         }
+
     }
 }
