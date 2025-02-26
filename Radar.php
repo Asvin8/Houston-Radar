@@ -88,15 +88,28 @@ switch ($act) {
         errorOccured("Failed to decompress GZIP file.");
     }
 
-    echo "Hex Dump: " . bin2hex(substr($jsonContent, 0, 50)) . "\n"; 
-
-    if(!mb_check_encoding($jsonContent, 'UTF-8')) { errorOccured("Invalid character encoding in JSON"); }
-
     // Decode JSON
     $decodedJson = json_decode($jsonContent, true);
     if ($decodedJson === null) {
         errorOccured("Invalid JSON format in GZIP file.");
     }
+
+    // Inject array into database.
+    //jsonTrace($decodedJson['vehicles']);
+    debugTrace(-1);
+
+
+    foreach($decodedJson['vehicles'] as $vehicle){
+        //jsonTrace($vehicle);
+
+        if(!addGenericDB($vehicle, 'td_speedlane_data', 'id', $msg, $err)){
+           debugTrace("$msg: $err");
+        }
+
+    }
+
+
+    //jsonTrace($decodedJson, 1);
 
     // Return JSON response
     echo json_encode([
