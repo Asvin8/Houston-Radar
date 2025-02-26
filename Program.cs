@@ -178,6 +178,7 @@ namespace HoustonRadarCSharpAppEx
                 jsonLongitude = longitude,
                 vehicles = vehicles?.AsEnumerable().Select(rec => new
                 {
+                    ID = rec._uid,
                     TimeEnding = rec._dt,
                     Lane = rec._lane,
                     Speed = $"{rec._speed} {speedUnit}",
@@ -193,8 +194,8 @@ namespace HoustonRadarCSharpAppEx
             string jsonData = JsonConvert.SerializeObject(jsonObject, Formatting.Indented);
 
             // Debug: Print JSON before compression
-            Console.WriteLine("Raw JSON before compression:");
-            Console.WriteLine(jsonData);
+            //Console.WriteLine("Raw JSON before compression:");
+            //Console.WriteLine(jsonData);
 
             // Save JSON to file with UTF-8 encoding
             File.WriteAllText(jsonFileName, jsonData, new UTF8Encoding(false));
