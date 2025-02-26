@@ -33,7 +33,7 @@ namespace HoustonRadarCSharpAppEx
         {
             Console.WriteLine("Program starting...");
 
-            for (int i = 13; i < radarIPs.Length; i++)
+            for (int i = 13; i < 14; i++)
             {
                 radarIPs[i] = 40 + i;
                 latitude = -1;
@@ -178,12 +178,12 @@ namespace HoustonRadarCSharpAppEx
                 jsonLongitude = longitude,
                 vehicles = vehicles?.AsEnumerable().Select(rec => new
                 {
-                    ID = rec._uid,
-                    TimeEnding = rec._dt,
-                    Lane = rec._lane,
-                    Speed = $"{rec._speed} {speedUnit}",
-                    Length = $"{Math.Round(rec._length) / 100.0} {lengthUnit}",
-                    Direction = rec._direction
+                    id = rec._uid,
+                    time = rec._dt,
+                    lane = rec._lane,
+                    speed = rec._speed,
+                    length_cm = rec._length,
+                    direction = rec._direction
                 }).ToList()
             };
 
