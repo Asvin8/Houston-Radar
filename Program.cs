@@ -17,6 +17,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using Newtonsoft.Json; 
 using System.Linq;
+using System.Globalization;
 
 
 namespace HoustonRadarCSharpAppEx
@@ -33,7 +34,7 @@ namespace HoustonRadarCSharpAppEx
         {
             Console.WriteLine("Program starting...");
 
-            for (int i = 13; i < 14; i++)
+            for (int i = 0; i < 1; i++)
             {
                 radarIPs[i] = 40 + i;
                 latitude = -1;
@@ -44,6 +45,9 @@ namespace HoustonRadarCSharpAppEx
 
             Console.WriteLine("Waiting for all radar connections...");
             Console.WriteLine("All radars connected or failed. Program will now exit.");
+
+
+            Thread.Sleep(90000);
         }
 
         private static void ConnectToRadar(radarCommClassThd rdr, int ip)
@@ -111,7 +115,7 @@ namespace HoustonRadarCSharpAppEx
 
         private static void ReadScheduleAPI(int ip)
         {
-            string url = $"http://api.spectrumtraffic.com/radar.php?act=get_schedules&ip_address=161.184.106.{ip}";
+            string url = $"http://api.spectrumtraffic.com/radar.php?act=get_active_radars";
 
             try {
                 HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
@@ -130,9 +134,7 @@ namespace HoustonRadarCSharpAppEx
 
                         start = DateTimeOffset.FromUnixTimeSeconds(long.Parse(fakeStart)).LocalDateTime;
                         end = DateTimeOffset.FromUnixTimeSeconds(long.Parse(fakeEnd)).LocalDateTime;
-
-                        //end = DateTime.Now;
-                        //start = end.AddDays(-3); 
+                        end.AddSeconds(-1);
 
                         Console.WriteLine($"Start: {start}");
                         Console.WriteLine($"End: {end}");
@@ -153,69 +155,47 @@ namespace HoustonRadarCSharpAppEx
             var vehicles = schema.getSpeedLaneVehicles();
 
             if (vehicles == null || vehicles.Length == 0) { Console.WriteLine($"No vehicles found for radar {ip}."); }
-            else { parseAndPrintVehicles("km/h", "m", vehicles, ip); }
+            else { parseAndPrintVehicles(vehicles, ip); }
         }
-
 
         private static void schema_progressevent(int packetno, int bytes) { Console.WriteLine($"Packet #{packetno}, bytes: {bytes}"); }
 
         private static void schema_progressPctComplete(int pct) { Console.WriteLine($"Progress: {pct}%"); }
 
-        private static void parseAndPrintVehicles(
-         string speedUnit,
-         string lengthUnit,
-         speedLanePreformedQueries.speedLaneVehicleRec[] vehicles,
-         int ip)
+        private static void parseAndPrintVehicles(speedLanePreformedQueries.speedLaneVehicleRec[] vehicles, int ip)
         {
             Console.WriteLine($"Entered parseAndPrintVehicles for radar {ip}.");
 
-            // Construct JSON object
-            var jsonObject = new
-            {
-                ip_address = $"161.184.106.{ip}",
-                num_vehicles = vehicles?.Length ?? 0,
-                jsonLatitude = latitude,
-                jsonLongitude = longitude,
-                vehicles = vehicles?.AsEnumerable().Select(rec => new
-                {
-                    id = rec._uid,
-                    time = rec._dt,
-                    lane = rec._lane,
-                    speed = rec._speed,
-                    length_cm = rec._length,
-                    direction = rec._direction
-                }).ToList()
-            };
+            // Define CSV filename
+            string csvFileName = $"{DateTime.Now:yyyyMMdd-HHmmss}_{ip}.csv";
+            string compressedFileName = $"{csvFileName}.gz";
 
-            string jsonFileName = $"{DateTime.Now:yyyyMMdd-HHmmss}_{ip}.json";
-            string compressedFileName = $"{jsonFileName}.gz";
+            // Write CSV data
+            using (var writer = new StreamWriter(csvFileName)) {
 
-            // Convert object to JSON string with indentation
-            string jsonData = JsonConvert.SerializeObject(jsonObject, Formatting.Indented);
+                writer.WriteLine("id,time,lane,speed_kmh,length_cm,direction");
 
-            // Debug: Print JSON before compression
-            //Console.WriteLine("Raw JSON before compression:");
-            //Console.WriteLine(jsonData);
+                // Write each vehicle record
+                if (vehicles != null) {
+                    foreach (var rec in vehicles) {
+                        writer.WriteLine($"{rec._uid},{rec._dt.ToString("o", CultureInfo.InvariantCulture)},{rec._lane},{rec._speed},{rec._length},{rec._direction}");
+                    }
+                }
+            }
 
-            // Save JSON to file with UTF-8 encoding
-            File.WriteAllText(jsonFileName, jsonData, new UTF8Encoding(false));
+            Console.WriteLine($"CSV file created: {csvFileName}");
 
-            Console.WriteLine($"JSON file created: {jsonFileName}");
-
-            // Compress and upload JSON file
-            ProcessJsonFile(jsonFileName, compressedFileName);
+            // Compress and upload CSV file
+            ProcessCsvFile(csvFileName, compressedFileName);
             Console.WriteLine($"Compressed file created: {compressedFileName}");
         }
 
-        private static void ProcessJsonFile(string inputFile, string outputFile)
+        private static void ProcessCsvFile(string inputFile, string outputFile) 
         {
-            // Compress JSON file
+            // Compress CSV file
             using (FileStream inputStream = new FileStream(inputFile, FileMode.Open, FileAccess.Read))
             using (FileStream outputStream = new FileStream(outputFile, FileMode.Create))
-            using (GZipStream gzipStream = new GZipStream(outputStream, CompressionMode.Compress))
-            {
-                inputStream.CopyTo(gzipStream);
-            }
+            using (GZipStream gzipStream = new GZipStream(outputStream, CompressionMode.Compress)) { inputStream.CopyTo(gzipStream); }
 
             // Define boundary for multipart/form-data
             string boundary = "---------------------------" + DateTime.Now.Ticks.ToString("x");
@@ -227,7 +207,7 @@ namespace HoustonRadarCSharpAppEx
             request.ContentType = "multipart/form-data; boundary=" + boundary;
 
             using (Stream requestStream = request.GetRequestStream())
-            using (BinaryWriter writer = new BinaryWriter(requestStream))
+            using (BinaryWriter writer = new BinaryWriter(requestStream)) 
             {
                 // Start boundary
                 string boundaryStart = $"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{Path.GetFileName(outputFile)}\"\r\nContent-Type: application/gzip\r\n\r\n";
@@ -244,7 +224,7 @@ namespace HoustonRadarCSharpAppEx
                 writer.Write(boundaryEndBytes);
             }
 
-            // Get and process the response (JSON, not GZIP)
+            // Get and process the response (CSV, not GZIP)
             try
             {
                 using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
