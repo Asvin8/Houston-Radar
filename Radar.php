@@ -47,19 +47,26 @@ switch ($act) {
     $sql = "SELECT td_equipment.equipment_guid, serial_no, ip_address, td_manifest.count_guid, manifest_guid, latitude, longitude, start_time, FROM_UNIXTIME(start_time) AS start_datetime, end_time,  FROM_UNIXTIME(end_time) AS end_datetime, hours FROM td_equipment
       LEFT JOIN td_manifest ON td_manifest.equipment_guid = td_equipment.equipment_guid
       LEFT JOIN td_recording_schedules ON td_recording_schedules.count_guid = td_manifest.count_guid
-      WHERE `type` = 'HOUSTON_SPEEDLANE_PRO' AND start_time IS NOT NULL AND end_time IS NOT NULL AND start_time <= $now AND end_time >= $now";
-
+      WHERE `type` = 'HOUSTON_SPEEDLANE_PRO' AND start_time IS NOT NULL AND end_time IS NOT NULL AND start_time <= $now AND (end_time + 1200) >= $now";
 
       $radars = Array();
 
       if($result = mysqli_query($link, $sql)){
 
-          while($row = mysqli_fetch_assoc($result)){
-            $resultant['radars'][] = $row;
-          }          
+          while($radar = mysqli_fetch_assoc($result)){
+
+            $sql2 = "SELECT * FROM asvinTesting WHERE equipment_guid = '{$radar['equipment_guid']}' ORDER BY time DESC LIMIT 0, 1";
+
+            if($result2 = mysqli_query($link, $sql2)){
+              $prev_record = mysqli_fetch_assoc($result2);
+              $radar['prev_time'] = $prev_record['time'];
+            }
+
+            $resultant['radars'][] = $radar;
+
+          }
 
       } else {
-
         $resultant['message'] = mysqli_errno($link);
         $resultant['err'] = 1;
       }
@@ -148,7 +155,7 @@ switch ($act) {
 
               // Build LOAD DATA query
               $sql = "LOAD DATA LOCAL INFILE '$escapedFilename'
-                      INTO TABLE asvinTesting
+                      INTO TABLE td_data_speedlane
                       FIELDS TERMINATED BY ','
                       ENCLOSED BY '\"'
                       LINES TERMINATED BY '\\n'
